@@ -1,6 +1,7 @@
+// controllers/auth.controller.js
+
 const User = require('../models/User');
 const { generateToken } = require('../utils/helpers');
-// const sendEmail = require('../utils/email'); // 如果需要邮件验证
 
 // @desc    注册新用户
 // @route   POST /api/auth/register
@@ -10,14 +11,12 @@ exports.register = async (req, res, next) => {
   try {
     const userExists = await User.findOne({ email });
     if (userExists) {
-      return res.status(400).json({ success: false, error: { code: 'USER_EXISTS', message: 'User already exists' } });
+      return res.status(400).json({ success: false, error: { code: 'USER_EXISTS', message: 'User with this email already exists' } });
     }
 
     const user = await User.create({ email, password, nickname });
 
-    // // (可选) 发送验证码或欢迎邮件
-    // await sendEmail({ email: user.email, subject: 'Welcome!', message: 'Welcome to our chat app!' });
-
+    // 注册成功，直接返回用户信息和token
     res.status(201).json({
       success: true,
       data: {
@@ -41,13 +40,15 @@ exports.login = async (req, res, next) => {
     }
     const user = await User.findOne({ email }).select('+password');
     if (!user || !(await user.matchPassword(password)) || user.isDeleted) {
-      return res.status(401).json({ success: false, error: { code: 'INVALID_CREDENTIALS', message: 'Invalid credentials' } });
+      return res.status(401).json({ success: false, error: { code: 'INVALID_CREDENTIALS', message: 'Invalid email or password' } });
     }
+    
+    // 登录成功，返回用户信息和token
     res.status(200).json({
       success: true,
       data: {
         token: generateToken(user._id),
-        user: { id: user._id, email: user.email, nickname: user.nickname }
+        user: { id: user._id, email: user.email, nickname: user.nickname, avatar: user.avatar, settings: user.settings }
       }
     });
   } catch (error) {
@@ -55,7 +56,7 @@ exports.login = async (req, res, next) => {
   }
 };
 
-// @desc    注销账号
+// @desc    注销账号 (软删除)
 // @route   DELETE /api/auth/deactivate
 // @access  Private
 exports.deactivateAccount = async (req, res, next) => {
@@ -66,7 +67,8 @@ exports.deactivateAccount = async (req, res, next) => {
         }
 
         user.isDeleted = true;
-        // 可选：添加其他清理逻辑，如从好友列表中移除等
+        user.nickname = '已注销用户'; // 可选: 修改用户信息
+        // 可选：添加其他清理逻辑，如退出所有群组、删除好友关系等
         await user.save();
         
         res.status(200).json({ success: true, data: { message: "Account deactivated successfully." }});
