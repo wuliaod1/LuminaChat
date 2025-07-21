@@ -1,4 +1,5 @@
-// sockets/index.js
+// sockets/index.js (最终修正版)
+
 const { Server } = require("socket.io");
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
@@ -6,35 +7,29 @@ const registerChatHandlers = require('./chatHandlers');
 const registerPresenceHandlers = require('./presenceHandlers');
 const registerGroupHandlers = require('./groupHandlers');
 
-const initializeSocket = (server, allowedOrigins) => {
+// 参数从 allowedOrigins 变为更通用的 corsOptions
+const initializeSocket = (server, corsOptions) => {
   const io = new Server(server, {
-    cors: {
-      origin: allowedOrigins,
-      methods: ["GET", "POST"]
-    },
+    cors: corsOptions.cors, // 直接使用传入的CORS配置
     connectionStateRecovery: {
       maxDisconnectionDuration: 2 * 60 * 1000,
       skipMiddlewares: true,
     }
   });
 
-  const onlineUsers = new Map(); // { userId: socketId }
+  const onlineUsers = new Map();
 
-  // Socket.io 中间件，用于连接认证
   io.use(async (socket, next) => {
     try {
       const token = socket.handshake.query.token;
       if (!token) {
         return next(new Error('Authentication error: Token not provided.'));
       }
-
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
       const user = await User.findById(decoded.id).select('-password');
-
       if (!user || user.isDeleted) {
         return next(new Error('Authentication error: User not found.'));
       }
-
       socket.user = user;
       next();
     } catch (error) {
@@ -44,7 +39,6 @@ const initializeSocket = (server, allowedOrigins) => {
 
   io.on('connection', (socket) => {
     console.log(`User connected: ${socket.user.nickname} (${socket.id})`);
-
     onlineUsers.set(socket.user._id.toString(), socket.id);
     io.emit('user_presence', { userId: socket.user._id, status: 'online' });
 
